@@ -1,14 +1,14 @@
 id,tweet,sentiment
 1,I love the new features on this app! #awesome #tech,positive
 2,The customer service was terrible. I'm so frustrated. #badservice,negative
-3,Just saw the new movie, it was okay. Not great, not bad. #movie,neutral
+3,Just saw the new movie - it was okay. Not great - not bad. #movie,neutral
 4,This is the best day ever! So happy right now. 😄,positive
 5,My flight got delayed again... 😠 #travelproblems,negative
 6,I'm not sure how I feel about the new update.,neutral
 7,What a beautiful day for a walk in the park! ☀️,positive
 8,I can't believe they cancelled my favorite show. #disappointed,negative
 9,The new restaurant in town is pretty good. I'd go back.,positive
-10,Ugh, so much traffic on the way to work today. 🚗,negative
+10,Ugh - so much traffic on the way to work today. 🚗,negative
 11,This new coffee shop has a great atmosphere. ☕️,positive
 12,I'm feeling really down today. 😔,negative
 13,The concert was amazing! Best performance I've ever seen. #music,positive
@@ -16,6 +16,6 @@ id,tweet,sentiment
 15,The weather is neither hot nor cold today.,neutral
 16,So excited for the weekend! #fridayfeeling,positive
 17,This is the worst pizza I've ever had. 🤢,negative
-18,The book I'm reading is interesting, but a bit slow.,neutral
+18,The book I'm reading is interesting- but a bit slow.,neutral
 19,Just finished a great workout! Feeling strong. 💪,positive
 20,My internet is down again. I can't get anything done. #fail,negative
