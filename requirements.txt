@@ -22,3 +22,6 @@ git+https://github.com/amueller/word_cloud.git
 # Jupyter
 ipykernel==6.30.1
 notebook==7.4.5
+
+#twitter to fetch real data
+tweepy==4.16.0
