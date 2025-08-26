@@ -17,8 +17,8 @@ nltk.download('stopwords')
 nltk.download('wordnet')
 
 # --- Paths to Pre-trained Models and Vectorizer ---
-MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'models')
-PLOTS_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'plots')
+MODELS_DIR = os.path.join(os.path.dirname(__file__), '..', 'models')
+PLOTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'plots')
 
 NB_MODEL_PATH = os.path.join(MODELS_DIR, 'naive_bayes_model.pkl')
 SVM_MODEL_PATH = os.path.join(MODELS_DIR, 'svm_model.pkl')

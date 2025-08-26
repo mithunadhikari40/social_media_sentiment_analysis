@@ -25,3 +25,19 @@ notebook==7.4.5
 
 #twitter to fetch real data
 tweepy==4.16.0
+
+
+# for api
+fastapi>=0.84.0
+uvicorn[standard]>=0.23.2
+sqlalchemy
+passlib[bcrypt]
+bcrypt==4.0.1
+python-jose[cryptography]
+python-multipart
+pydantic>=2.0
+pydantic[email]
+reportlab==4.4.3
+
+
+

@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import pandas as pd
 
-from . import analysis, pdf_generator, auth, schemas, database, models
+from . import  auth, schemas, database, models
 
 router = APIRouter()
 
@@ -34,6 +34,8 @@ async def analyze_data(
     pdf_filename = f"report_{unique_id}.pdf"
     pdf_path = os.path.join(RESULTS_DIR, pdf_filename)
 
+    from . import pdf_generator
+
     try:
         with open(upload_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
@@ -42,6 +44,7 @@ async def analyze_data(
         if 'text' not in df.columns:
             raise HTTPException(status_code=400, detail="CSV file must contain a 'text' column.")
 
+        from . import  analysis
         df_results, wordcloud_paths = analysis.run_analysis(df)
         pdf_generator.create_pdf_report(df_results, wordcloud_paths, pdf_path)
 

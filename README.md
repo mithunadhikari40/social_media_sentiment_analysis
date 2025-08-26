@@ -38,7 +38,7 @@ The project is organized into the following directories and files:
 Follow these steps to set up your local environment and run the project.
 
 **Prerequisites:**
-- Python 3.8 or higher
+- Python 3.8 or higher(tested on 3.12 and is recommended)
 
 **Step 1: Clone the Repository & Create a Virtual Environment**
 
@@ -132,3 +132,33 @@ The notebook is designed for easy customization. Look for Markdown cells or code
 
 5.  **Hyperparameter Tuning (GridSearchCV):**
     - In the **Hyperparameter Tuning** section (Cell #24), you can expand the `param_grid` dictionary to search over more SVM parameters and values.
+
+
+# Social Media Analysis API
+
+This project is a FastAPI application that provides user authentication, runs social media analysis, and generates PDF reports.
+
+Before running this API, first go through the notebook(analysis.ipynb and run all the steps to train the model, and run the following command to train the missing models
+```bash
+     python backend/train_vectorizer.py
+```
+
+## Setup
+
+1.  **Install dependencies:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+2.  **Run the application:**
+    ```bash
+    uvicorn backend.main:app --reload
+    ```
+
+## API Endpoints
+
+-   `/auth/register`: Register a new user.
+-   `/auth/login`: Log in to get a JWT token.
+-   `POST /api/analyze/`: Upload a CSV file to run analysis. This creates a report record and returns its metadata.
+-   `GET /api/reports/`: Get a list of all reports you have generated.
+-   `GET /api/reports/{report_id}`: Download a specific PDF report by its ID.

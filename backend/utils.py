@@ -6,7 +6,7 @@ from typing import Optional
 # Password Hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-SECRET_KEY = "your-secret-key"  # In a real app, use a secure, randomly generated key from environment variables
+SECRET_KEY = "your-secret-key"  # In a real backend, use a secure, randomly generated key from environment variables
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
