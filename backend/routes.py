@@ -1,13 +1,17 @@
 import os
 import shutil
 import uuid
-from typing import List
+from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import pandas as pd
+from pydantic import BaseModel
+import  numpy as np
+import json
+from datetime import datetime
 
-from . import  auth, schemas, database, models
+from . import  auth, schemas, database, models, analysis
 
 router = APIRouter()
 
@@ -96,3 +100,211 @@ def download_report(
         filename=f"report_{db_report.id}.pdf",
         media_type="application/pdf"
     )
+
+# Request/Response models for analyze_query endpoint
+class AnalyzeQueryRequest(BaseModel):
+    query: str
+    useLiveData: bool = False
+
+class ChartData(BaseModel):
+    type: str
+    data: Dict[str, Any]
+    options: Dict[str, Any] = {}
+
+class AnalysisResponse(BaseModel):
+    id: str
+    query: str
+    createdAt: str
+    charts: List[ChartData]
+    metrics: Dict[str, Any]
+
+@router.post("/analyze_query/", response_model=AnalysisResponse)
+async def analyze_query(
+    request: AnalyzeQueryRequest,
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_user)
+):
+    """
+    Analyze social media sentiment based on a query.
+    Returns chart data and metrics for visualization.
+    """
+    try:
+        # For demo purposes, we'll use sample data or load from sample_tweets.csv
+        sample_data_path = os.path.join(BASE_DIR, "sample_tweets.csv")
+        
+        if os.path.exists(sample_data_path):
+            df = pd.read_csv(sample_data_path)
+        else:
+            # Create sample data if file doesn't exist
+            df = pd.DataFrame({
+                'text': [
+                    "I love this product! It's amazing!",
+                    "This is terrible, worst experience ever",
+                    "It's okay, nothing special",
+                    "Absolutely fantastic! Highly recommend",
+                    "Not good at all, very disappointed",
+                    "Pretty decent, could be better",
+                    "Outstanding quality and service!",
+                    "Waste of money, don't buy this",
+                    "Average product, meets expectations",
+                    "Excellent! Will buy again!"
+                ]
+            })
+        
+        # Filter data based on query if provided
+        if request.query.strip():
+            # Simple keyword filtering - in production, you'd use more sophisticated search
+            df_filtered = df[df['text'].str.contains(request.query, case=False, na=False)]
+            if df_filtered.empty:
+                df_filtered = df  # Use all data if no matches
+        else:
+            df_filtered = df
+        
+        # Run sentiment analysis
+        df_results = analysis.run_analysis(df_filtered)
+        
+        # Generate chart data
+        sentiment_counts = df_results['bert_sentiment'].value_counts()
+        
+        # Pie chart data for sentiment distribution
+        pie_chart = ChartData(
+            type="pie",
+            data={
+                "labels": sentiment_counts.index.tolist(),
+                "datasets": [{
+                    "data": [int(x) for x in sentiment_counts.values.tolist()],
+                    "backgroundColor": ["#ff6384", "#36a2eb", "#4bc0c0"],
+                    "borderWidth": 2
+                }]
+            },
+            options={
+                "responsive": True,
+                "plugins": {
+                    "title": {
+                        "display": True,
+                        "text": "Sentiment Distribution"
+                    }
+                }
+            }
+        )
+        
+        # Bar chart for model comparison
+        nb_counts = df_results['nb_sentiment'].value_counts()
+        svm_counts = df_results['svm_sentiment'].value_counts()
+        bert_counts = df_results['bert_sentiment'].value_counts()
+        
+        sentiments = ['negative', 'neutral', 'positive']
+        bar_chart = ChartData(
+            type="bar",
+            data={
+                "labels": sentiments,
+                "datasets": [
+                    {
+                        "label": "Naive Bayes",
+                        "data": [int(nb_counts.get(s, 0)) for s in sentiments],
+                        "backgroundColor": "#ff6384"
+                    },
+                    {
+                        "label": "SVM",
+                        "data": [int(svm_counts.get(s, 0)) for s in sentiments],
+                        "backgroundColor": "#36a2eb"
+                    },
+                    {
+                        "label": "BERT",
+                        "data": [int(bert_counts.get(s, 0)) for s in sentiments],
+                        "backgroundColor": "#4bc0c0"
+                    }
+                ]
+            },
+            options={
+                "responsive": True,
+                "plugins": {
+                    "title": {
+                        "display": True,
+                        "text": "Model Comparison"
+                    }
+                },
+                "scales": {
+                    "y": {
+                        "beginAtZero": True
+                    }
+                }
+            }
+        )
+        
+        # Line chart for sentiment over time (simulated)
+        time_data = []
+        for i in range(7):  # Last 7 days
+            time_data.append({
+                "day": f"Day {i+1}",
+                "positive": np.random.randint(10, 50),
+                "negative": np.random.randint(5, 30),
+                "neutral": np.random.randint(15, 40)
+            })
+        
+        line_chart = ChartData(
+            type="line",
+            data={
+                "labels": [d["day"] for d in time_data],
+                "datasets": [
+                    {
+                        "label": "Positive",
+                        "data": [d["positive"] for d in time_data],
+                        "borderColor": "#4bc0c0",
+                        "fill": False
+                    },
+                    {
+                        "label": "Negative", 
+                        "data": [d["negative"] for d in time_data],
+                        "borderColor": "#ff6384",
+                        "fill": False
+                    },
+                    {
+                        "label": "Neutral",
+                        "data": [d["neutral"] for d in time_data],
+                        "borderColor": "#36a2eb", 
+                        "fill": False
+                    }
+                ]
+            },
+            options={
+                "responsive": True,
+                "plugins": {
+                    "title": {
+                        "display": True,
+                        "text": "Sentiment Trends Over Time"
+                    }
+                }
+            }
+        )
+        
+        # Calculate metrics
+        total_tweets = len(df_results)
+        positive_pct = (sentiment_counts.get('positive', 0) / total_tweets * 100) if total_tweets > 0 else 0
+        negative_pct = (sentiment_counts.get('negative', 0) / total_tweets * 100) if total_tweets > 0 else 0
+        neutral_pct = (sentiment_counts.get('neutral', 0) / total_tweets * 100) if total_tweets > 0 else 0
+        
+        metrics = {
+            "totalTweets": total_tweets,
+            "positivePercentage": round(positive_pct, 2),
+            "negativePercentage": round(negative_pct, 2),
+            "neutralPercentage": round(neutral_pct, 2),
+            "overallSentiment": "positive" if positive_pct > negative_pct else "negative" if negative_pct > positive_pct else "neutral",
+            "confidenceScore": round(max(positive_pct, negative_pct, neutral_pct), 2)
+        }
+        
+        # Generate unique ID for this analysis
+        analysis_id = str(uuid.uuid4())
+        
+        response = AnalysisResponse(
+            id=analysis_id,
+            query=request.query,
+            createdAt=datetime.now().isoformat(),
+            charts=[pie_chart, bar_chart, line_chart],
+            metrics=metrics
+        )
+        
+        return response
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")

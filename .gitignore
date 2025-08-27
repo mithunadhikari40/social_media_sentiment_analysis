@@ -14,3 +14,5 @@ venv/
 
 python
 python/
+frontend/node_modules/
+frontend/node_modules

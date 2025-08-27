@@ -32,9 +32,22 @@ vectorizer = joblib.load(VECTORIZER_PATH)
 
 # Load BERT model and tokenizer
 bert_tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
-bert_model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)
-bert_model.load_state_dict(torch.load(BERT_MODEL_PATH, map_location=torch.device('cpu')))
-bert_model.eval()
+# Try to load the saved model first to determine the number of labels
+try:
+    saved_state = torch.load(BERT_MODEL_PATH, map_location=torch.device('cpu'))
+    # Check the shape of classifier.weight to determine num_labels
+    classifier_weight_shape = saved_state['classifier.weight'].shape
+    num_labels = classifier_weight_shape[0]  # First dimension is num_labels
+    print(f"Detected {num_labels} labels from saved BERT model")
+    
+    bert_model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=num_labels)
+    bert_model.load_state_dict(saved_state)
+    bert_model.eval()
+except Exception as e:
+    print(f"Error loading BERT model: {e}")
+    print("Using default BERT model without pre-trained weights")
+    bert_model = BertForSequenceClassification.from_pretrained('bert-base-uncased', num_labels=3)
+    bert_model.eval()
 
 # --- Text Preprocessing ---
 def clean_text(text):
@@ -60,8 +73,14 @@ def predict_sentiment_bert(text):
     with torch.no_grad():
         outputs = bert_model(**inputs)
     prediction = torch.argmax(outputs.logits, dim=1).item()
-    sentiment_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
-    return sentiment_map[prediction]
+    
+    # Dynamic sentiment mapping based on number of labels
+    if bert_model.num_labels == 2:
+        sentiment_map = {0: 'negative', 1: 'positive'}
+    else:
+        sentiment_map = {0: 'negative', 1: 'neutral', 2: 'positive'}
+    
+    return sentiment_map.get(prediction, 'neutral')
 
 # --- Main Analysis Function ---
 def run_analysis(df: pd.DataFrame):
