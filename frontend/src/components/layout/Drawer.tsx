@@ -38,7 +38,17 @@ const Drawer = ({ mobileOpen, handleDrawerToggle, drawerWidth }: DrawerProps) =>
   const drawer = (
     <div>
       <Toolbar>
-        <Typography variant="h6" noWrap component="div">
+        <Typography 
+          variant="h6" 
+          component="div"
+          sx={{ 
+            whiteSpace: 'normal',
+            lineHeight: 1.2,
+            fontSize: '1.1rem',
+            fontWeight: 600,
+            padding: '8px 0'
+          }}
+        >
           Social Media Analysis
         </Typography>
       </Toolbar>

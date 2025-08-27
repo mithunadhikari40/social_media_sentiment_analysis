@@ -16,20 +16,28 @@ import {
   Chip,
   CircularProgress,
   Tooltip,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from '@mui/material';
 import {
   Visibility as ViewIcon,
   PictureAsPdf as PdfIcon,
   Refresh as RefreshIcon,
+  Delete as DeleteIcon,
 } from '@mui/icons-material';
 import { useQuery } from 'react-query';
-import { getAnalysisHistory, downloadPdfReport } from '../../api/analysis';
+import { getAnalysisHistory, downloadPdfReport, deleteAnalysis } from '../../api/analysis';
 import { format } from 'date-fns';
 
 const ReportsPage = () => {
   const navigate = useNavigate();
   const [page, setPage] = useState(0);
   const [rowsPerPage, setRowsPerPage] = useState(10);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [analysisToDelete, setAnalysisToDelete] = useState<string | null>(null);
 
   const {
     data: analyses = [],
@@ -38,7 +46,7 @@ const ReportsPage = () => {
     refetch,
   } = useQuery('analyses', getAnalysisHistory);
 
-  const handleChangePage = (event: unknown, newPage: number) => {
+  const handleChangePage = (_event: unknown, newPage: number) => {
     setPage(newPage);
   };
 
@@ -57,7 +65,7 @@ const ReportsPage = () => {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `report-${query}-${new Date().toISOString().split('T')[0]}.pdf`;
+      link.download = `analysis-${query}-${new Date().toISOString().split('T')[0]}.pdf`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -65,6 +73,29 @@ const ReportsPage = () => {
     } catch (error) {
       console.error('Error downloading PDF:', error);
     }
+  };
+
+  const handleDeleteClick = (id: string) => {
+    setAnalysisToDelete(id);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleDeleteConfirm = async () => {
+    if (analysisToDelete) {
+      try {
+        await deleteAnalysis(analysisToDelete);
+        refetch(); // Refresh the list
+        setDeleteDialogOpen(false);
+        setAnalysisToDelete(null);
+      } catch (error) {
+        console.error('Error deleting analysis:', error);
+      }
+    }
+  };
+
+  const handleDeleteCancel = () => {
+    setDeleteDialogOpen(false);
+    setAnalysisToDelete(null);
   };
 
   if (isLoading) {
@@ -113,10 +144,10 @@ const ReportsPage = () => {
           <Table>
             <TableHead>
               <TableRow>
-                <TableCell>Query</TableCell>
-                <TableCell>Date</TableCell>
-                <TableCell>Status</TableCell>
-                <TableCell align="right">Actions</TableCell>
+                <TableCell sx={{ minWidth: 200 }}>Query</TableCell>
+                <TableCell sx={{ minWidth: 150 }}>Date</TableCell>
+                <TableCell sx={{ minWidth: 100 }}>Status</TableCell>
+                <TableCell align="right" sx={{ minWidth: 150 }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -124,14 +155,22 @@ const ReportsPage = () => {
                 analyses
                   .slice(page * rowsPerPage, page * rowsPerPage + rowsPerPage)
                   .map((analysis: any) => (
-                    <TableRow hover key={analysis.id}>
+                    <TableRow hover key={analysis.id || analysis.analysis_id}>
                       <TableCell>
                         <Typography variant="body2" noWrap>
                           {analysis.query}
                         </Typography>
                       </TableCell>
                       <TableCell>
-                        {format(new Date(analysis.createdAt), 'MMM d, yyyy HH:mm')}
+                        {(() => {
+                          try {
+                            const dateStr = analysis.createdAt || analysis.created_at;
+                            if (!dateStr) return 'Unknown date';
+                            return format(new Date(dateStr), 'MMM d, yyyy HH:mm');
+                          } catch (error) {
+                            return 'Invalid date';
+                          }
+                        })()}
                       </TableCell>
                       <TableCell>
                         <Chip
@@ -149,7 +188,7 @@ const ReportsPage = () => {
                       <TableCell align="right">
                         <Tooltip title="View Report">
                           <IconButton
-                            onClick={() => handleViewReport(analysis.id)}
+                            onClick={() => handleViewReport(analysis.id || analysis.analysis_id)}
                             size="small"
                             color="primary"
                           >
@@ -159,12 +198,21 @@ const ReportsPage = () => {
                         <Tooltip title="Download PDF">
                           <IconButton
                             onClick={() =>
-                              handleDownloadPdf(analysis.id, analysis.query)
+                              handleDownloadPdf(analysis.id || analysis.analysis_id, analysis.query)
                             }
                             size="small"
                             color="secondary"
                           >
                             <PdfIcon />
+                          </IconButton>
+                        </Tooltip>
+                        <Tooltip title="Delete Analysis">
+                          <IconButton
+                            onClick={() => handleDeleteClick(analysis.id || analysis.analysis_id)}
+                            size="small"
+                            color="error"
+                          >
+                            <DeleteIcon />
                           </IconButton>
                         </Tooltip>
                       </TableCell>
@@ -201,6 +249,31 @@ const ReportsPage = () => {
           />
         )}
       </Paper>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog
+        open={deleteDialogOpen}
+        onClose={handleDeleteCancel}
+        aria-labelledby="delete-dialog-title"
+        aria-describedby="delete-dialog-description"
+      >
+        <DialogTitle id="delete-dialog-title">
+          Delete Analysis
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText id="delete-dialog-description">
+            Are you sure you want to delete this analysis? This action cannot be undone.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleDeleteCancel} color="primary">
+            Cancel
+          </Button>
+          <Button onClick={handleDeleteConfirm} color="error" variant="contained">
+            Delete
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

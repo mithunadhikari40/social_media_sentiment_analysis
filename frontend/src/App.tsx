@@ -14,6 +14,7 @@ const LoginPage = lazy(() => import('./pages/auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/auth/RegisterPage'));
 const DashboardPage = lazy(() => import('./pages/dashboard/DashboardPage'));
 const AnalysisPage = lazy(() => import('./pages/analysis/AnalysisPage'));
+const AnalysisDetailsPage = lazy(() => import('./pages/analysis/AnalysisDetailsPage'));
 const ReportsPage = lazy(() => import('./pages/reports/ReportsPage'));
 const ProfilePage = lazy(() => import('./pages/profile/ProfilePage'));
 
@@ -28,7 +29,7 @@ const queryClient = new QueryClient({
 });
 
 // Protected Route Component
-const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
+const ProtectedRoute = ({ children }: { children: React.ReactElement }) => {
   const { isAuthenticated, loading, user, token } = useAuth();
   
   console.log('ProtectedRoute - isAuthenticated:', isAuthenticated);
@@ -51,7 +52,7 @@ const ProtectedRoute = ({ children }: { children: JSX.Element }) => {
 };
 
 // Public Only Route Component
-const PublicRoute = ({ children }: { children: JSX.Element }) => {
+const PublicRoute = ({ children }: { children: React.ReactElement }) => {
   const { isAuthenticated, loading } = useAuth();
 
   if (loading) {
@@ -105,6 +106,7 @@ function App() {
                     <Route index element={<Navigate to="/dashboard" replace />} />
                     <Route path="dashboard" element={<DashboardPage />} />
                     <Route path="analysis" element={<AnalysisPage />} />
+                    <Route path="analysis/:id" element={<AnalysisDetailsPage />} />
                     <Route path="reports" element={<ReportsPage />} />
                     <Route path="profile" element={<ProfilePage />} />
                   </Route>

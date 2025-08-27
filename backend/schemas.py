@@ -1,5 +1,5 @@
 from pydantic import BaseModel, EmailStr
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 # Report Schemas
@@ -28,6 +28,7 @@ class User(UserBase):
     created_at: datetime
     updated_at: datetime
     reports: List[Report] = []
+    analyses: List['AnalysisBase'] = []
 
     class Config:
         orm_mode = True
@@ -48,3 +49,20 @@ class UserLogin(BaseModel):
 class AnalysisRequest(BaseModel):
     query: str
     useLiveData: bool
+
+class AnalysisBase(BaseModel):
+    analysis_id: str
+    query: str
+    created_at: datetime
+
+class Analysis(AnalysisBase):
+    id: int
+    user_id: int
+    response_data: str  # JSON string
+
+    class Config:
+        orm_mode = True
+
+class AnalysisSummary(AnalysisBase):
+    """Lightweight version for listing analyses"""
+    pass

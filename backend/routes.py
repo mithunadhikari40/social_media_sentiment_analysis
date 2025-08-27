@@ -1,70 +1,27 @@
 import os
-import shutil
-import uuid
 from typing import List, Dict, Any
-from fastapi import APIRouter, Depends, File, UploadFile, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 import pandas as pd
 from pydantic import BaseModel
-import  numpy as np
+import numpy as np
 import json
 from datetime import datetime
+from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 
-from . import  auth, schemas, database, models, analysis
+from . import auth, schemas, database, models, analysis
 
 router = APIRouter()
 
 # Define base directory relative to this file's location
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-UPLOAD_DIR = os.path.join(BASE_DIR, "data", "uploads")
 RESULTS_DIR = os.path.join(BASE_DIR, "results")
 
-# Ensure directories exist
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+# Ensure results directory exists
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
-@router.post("/analyze/", status_code=status.HTTP_201_CREATED, response_model=schemas.Report)
-async def analyze_data(
-    file: UploadFile = File(...),
-    db: Session = Depends(database.get_db),
-    current_user: schemas.User = Depends(auth.get_current_user)
-):
-    if not file.filename.endswith('.csv'):
-        raise HTTPException(status_code=400, detail="Invalid file type. Please upload a CSV file.")
-
-    unique_id = uuid.uuid4().hex
-    upload_path = os.path.join(UPLOAD_DIR, f"{unique_id}_{file.filename}")
-    pdf_filename = f"report_{unique_id}.pdf"
-    pdf_path = os.path.join(RESULTS_DIR, pdf_filename)
-
-    from . import pdf_generator
-
-    try:
-        with open(upload_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        df = pd.read_csv(upload_path)
-        if 'text' not in df.columns:
-            raise HTTPException(status_code=400, detail="CSV file must contain a 'text' column.")
-
-        from . import  analysis
-        df_results, wordcloud_paths = analysis.run_analysis(df)
-        pdf_generator.create_pdf_report(df_results, wordcloud_paths, pdf_path)
-
-        # Save report metadata to the database
-        db_report = models.Report(filename=pdf_filename, user_id=current_user.id)
-        db.add(db_report)
-        db.commit()
-        db.refresh(db_report)
-
-        return db_report
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"An unexpected error occurred: {str(e)}")
-    finally:
-        if os.path.exists(upload_path):
-            os.remove(upload_path)
+# File upload endpoint removed - not needed for social media analysis
 
 @router.get("/reports/", response_model=List[schemas.Report])
 def list_user_reports(
@@ -106,17 +63,48 @@ class AnalyzeQueryRequest(BaseModel):
     query: str
     useLiveData: bool = False
 
-class ChartData(BaseModel):
-    type: str
-    data: Dict[str, Any]
-    options: Dict[str, Any] = {}
+class SentimentData(BaseModel):
+    sentiment: str
+    count: int
+    percentage: float
+
+class ModelMetrics(BaseModel):
+    accuracy: float
+    precision: float
+    recall: float
+    f1_score: float
+    confusion_matrix: List[List[int]]
 
 class AnalysisResponse(BaseModel):
     id: str
     query: str
     createdAt: str
-    charts: List[ChartData]
+    sentimentDistribution: List[SentimentData]
+    modelComparison: Dict[str, float]  # model_name -> accuracy
+    sentimentCounts: Dict[str, List[SentimentData]]  # model_name -> sentiment counts
+    timeSeriesData: List[Dict[str, Any]]  # daily sentiment data
+    wordCloudData: Dict[str, List[str]]  # sentiment -> words
+    confusionMatrices: Dict[str, List[List[int]]]  # model_name -> matrix
     metrics: Dict[str, Any]
+    modelMetrics: Dict[str, ModelMetrics]
+    insights: Dict[str, Any]
+    rawData: List[Dict[str, Any]]  # processed tweet data
+
+def extract_words_for_sentiment(df: pd.DataFrame, sentiment: str) -> List[str]:
+    """Extract and return words for a specific sentiment"""
+    try:
+        text = ' '.join(df[df['bert_sentiment'] == sentiment]['cleaned_text'])
+        if not text.strip():
+            return []
+        
+        # Simple word extraction (client can generate word cloud)
+        words = text.split()
+        # Remove duplicates while preserving order
+        unique_words = list(dict.fromkeys(words))
+        return unique_words[:100]  # Limit to top 100 words
+    except Exception as e:
+        print(f"Error extracting words for {sentiment}: {e}")
+        return []
 
 @router.post("/analyze_query/", response_model=AnalysisResponse)
 async def analyze_query(
@@ -126,10 +114,10 @@ async def analyze_query(
 ):
     """
     Analyze social media sentiment based on a query.
-    Returns chart data and metrics for visualization.
+    Returns comprehensive chart data and metrics matching the analysis.ipynb notebook.
     """
     try:
-        # For demo purposes, we'll use sample data or load from sample_tweets.csv
+        # Load data
         sample_data_path = os.path.join(BASE_DIR, "sample_tweets.csv")
         
         if os.path.exists(sample_data_path):
@@ -147,142 +135,128 @@ async def analyze_query(
                     "Outstanding quality and service!",
                     "Waste of money, don't buy this",
                     "Average product, meets expectations",
-                    "Excellent! Will buy again!"
+                    "Excellent! Will buy again!",
+                    "Great service and fast delivery",
+                    "Poor quality, not worth the price",
+                    "Neutral experience, nothing special",
+                    "Amazing product, exceeded expectations!",
+                    "Disappointed with the purchase"
                 ]
             })
         
         # Filter data based on query if provided
         if request.query.strip():
-            # Simple keyword filtering - in production, you'd use more sophisticated search
             df_filtered = df[df['text'].str.contains(request.query, case=False, na=False)]
             if df_filtered.empty:
-                df_filtered = df  # Use all data if no matches
+                df_filtered = df
         else:
             df_filtered = df
         
         # Run sentiment analysis
         df_results = analysis.run_analysis(df_filtered)
         
-        # Generate chart data
-        sentiment_counts = df_results['bert_sentiment'].value_counts()
-        
-        # Pie chart data for sentiment distribution
-        pie_chart = ChartData(
-            type="pie",
-            data={
-                "labels": sentiment_counts.index.tolist(),
-                "datasets": [{
-                    "data": [int(x) for x in sentiment_counts.values.tolist()],
-                    "backgroundColor": ["#ff6384", "#36a2eb", "#4bc0c0"],
-                    "borderWidth": 2
-                }]
-            },
-            options={
-                "responsive": True,
-                "plugins": {
-                    "title": {
-                        "display": True,
-                        "text": "Sentiment Distribution"
-                    }
-                }
-            }
-        )
-        
-        # Bar chart for model comparison
+        # Get sentiment counts for each model
         nb_counts = df_results['nb_sentiment'].value_counts()
         svm_counts = df_results['svm_sentiment'].value_counts()
         bert_counts = df_results['bert_sentiment'].value_counts()
         
         sentiments = ['negative', 'neutral', 'positive']
-        bar_chart = ChartData(
-            type="bar",
-            data={
-                "labels": sentiments,
-                "datasets": [
-                    {
-                        "label": "Naive Bayes",
-                        "data": [int(nb_counts.get(s, 0)) for s in sentiments],
-                        "backgroundColor": "#ff6384"
-                    },
-                    {
-                        "label": "SVM",
-                        "data": [int(svm_counts.get(s, 0)) for s in sentiments],
-                        "backgroundColor": "#36a2eb"
-                    },
-                    {
-                        "label": "BERT",
-                        "data": [int(bert_counts.get(s, 0)) for s in sentiments],
-                        "backgroundColor": "#4bc0c0"
-                    }
-                ]
-            },
-            options={
-                "responsive": True,
-                "plugins": {
-                    "title": {
-                        "display": True,
-                        "text": "Model Comparison"
-                    }
-                },
-                "scales": {
-                    "y": {
-                        "beginAtZero": True
-                    }
-                }
-            }
-        )
-        
-        # Line chart for sentiment over time (simulated)
-        time_data = []
-        for i in range(7):  # Last 7 days
-            time_data.append({
-                "day": f"Day {i+1}",
-                "positive": np.random.randint(10, 50),
-                "negative": np.random.randint(5, 30),
-                "neutral": np.random.randint(15, 40)
-            })
-        
-        line_chart = ChartData(
-            type="line",
-            data={
-                "labels": [d["day"] for d in time_data],
-                "datasets": [
-                    {
-                        "label": "Positive",
-                        "data": [d["positive"] for d in time_data],
-                        "borderColor": "#4bc0c0",
-                        "fill": False
-                    },
-                    {
-                        "label": "Negative", 
-                        "data": [d["negative"] for d in time_data],
-                        "borderColor": "#ff6384",
-                        "fill": False
-                    },
-                    {
-                        "label": "Neutral",
-                        "data": [d["neutral"] for d in time_data],
-                        "borderColor": "#36a2eb", 
-                        "fill": False
-                    }
-                ]
-            },
-            options={
-                "responsive": True,
-                "plugins": {
-                    "title": {
-                        "display": True,
-                        "text": "Sentiment Trends Over Time"
-                    }
-                }
-            }
-        )
-        
-        # Calculate metrics
         total_tweets = len(df_results)
-        positive_pct = (sentiment_counts.get('positive', 0) / total_tweets * 100) if total_tweets > 0 else 0
-        negative_pct = (sentiment_counts.get('negative', 0) / total_tweets * 100) if total_tweets > 0 else 0
-        neutral_pct = (sentiment_counts.get('neutral', 0) / total_tweets * 100) if total_tweets > 0 else 0
+        
+        # 1. Sentiment Distribution Data
+        sentiment_distribution = []
+        for sentiment in sentiments:
+            count = int(bert_counts.get(sentiment, 0))
+            percentage = round((count / total_tweets * 100) if total_tweets > 0 else 0, 2)
+            sentiment_distribution.append(SentimentData(
+                sentiment=sentiment,
+                count=count,
+                percentage=percentage
+            ))
+        
+        # 2. Model Performance Comparison Data
+        # Calculate accuracy for each model (using BERT as ground truth)
+        nb_accuracy = accuracy_score(df_results['bert_sentiment'], df_results['nb_sentiment'])
+        svm_accuracy = accuracy_score(df_results['bert_sentiment'], df_results['svm_sentiment'])
+        bert_accuracy = 1.0  # BERT compared to itself
+        
+        model_comparison = {
+            "Naive Bayes": round(nb_accuracy, 3),
+            "SVM": round(svm_accuracy, 3),
+            "BERT": round(bert_accuracy, 3)
+        }
+        
+        # 3. Sentiment Count Comparison Data
+        sentiment_counts = {}
+        for model_name, counts in [("Naive Bayes", nb_counts), ("SVM", svm_counts), ("BERT", bert_counts)]:
+            model_sentiments = []
+            for sentiment in sentiments:
+                count = int(counts.get(sentiment, 0))
+                percentage = round((count / total_tweets * 100) if total_tweets > 0 else 0, 2)
+                model_sentiments.append(SentimentData(
+                    sentiment=sentiment,
+                    count=count,
+                    percentage=percentage
+                ))
+            sentiment_counts[model_name] = model_sentiments
+        
+        # 4. Word Cloud Data for each sentiment
+        wordcloud_data = {}
+        for sentiment in ['positive', 'negative', 'neutral']:
+            if sentiment in bert_counts.index:
+                words = extract_words_for_sentiment(df_results, sentiment)
+                if words:
+                    wordcloud_data[sentiment] = words
+        
+        # 5. Confusion Matrices Data for each model
+        confusion_matrices = {}
+        class_labels = sorted(df_results['bert_sentiment'].unique())
+        
+        models_data = {
+            "Naive Bayes": df_results['nb_sentiment'],
+            "SVM": df_results['svm_sentiment']
+        }
+        
+        for model_name, predictions in models_data.items():
+            cm = confusion_matrix(df_results['bert_sentiment'], predictions, labels=class_labels)
+            confusion_matrices[model_name] = cm.tolist()
+        
+        # 6. Time Series Data (simulated with realistic data)
+        time_series_data = []
+        if 'timestamp' in df_results.columns:
+            # Use real timestamp data if available
+            df_results['date'] = pd.to_datetime(df_results['timestamp']).dt.date
+            time_sentiment = df_results.groupby(['date', 'bert_sentiment']).size().unstack(fill_value=0)
+            
+            for date in time_sentiment.index:
+                time_series_data.append({
+                    "date": str(date),
+                    "positive": int(time_sentiment.loc[date].get('positive', 0)),
+                    "negative": int(time_sentiment.loc[date].get('negative', 0)),
+                    "neutral": int(time_sentiment.loc[date].get('neutral', 0))
+                })
+        else:
+            # Generate simulated time series data with realistic dates
+            from datetime import datetime, timedelta
+            start_date = datetime.now() - timedelta(days=6)
+            
+            for i in range(7):
+                current_date = start_date + timedelta(days=i)
+                base_positive = int(bert_counts.get('positive', 0) / 7)
+                base_negative = int(bert_counts.get('negative', 0) / 7)
+                base_neutral = int(bert_counts.get('neutral', 0) / 7)
+                
+                time_series_data.append({
+                    "date": current_date.strftime("%Y-%m-%d"),
+                    "positive": max(0, base_positive + np.random.randint(-2, 3)),
+                    "negative": max(0, base_negative + np.random.randint(-2, 3)),
+                    "neutral": max(0, base_neutral + np.random.randint(-2, 3))
+                })
+        
+        # Calculate comprehensive metrics
+        positive_pct = (bert_counts.get('positive', 0) / total_tweets * 100) if total_tweets > 0 else 0
+        negative_pct = (bert_counts.get('negative', 0) / total_tweets * 100) if total_tweets > 0 else 0
+        neutral_pct = (bert_counts.get('neutral', 0) / total_tweets * 100) if total_tweets > 0 else 0
         
         metrics = {
             "totalTweets": total_tweets,
@@ -293,6 +267,56 @@ async def analyze_query(
             "confidenceScore": round(max(positive_pct, negative_pct, neutral_pct), 2)
         }
         
+        # Calculate model metrics
+        model_metrics = {}
+        for model_name, predictions in models_data.items():
+            if model_name != "BERT":
+                y_true = df_results['bert_sentiment']
+                y_pred = predictions
+                
+                # Calculate metrics
+                acc = accuracy_score(y_true, y_pred)
+                prec = precision_score(y_true, y_pred, average='weighted', zero_division=0)
+                rec = recall_score(y_true, y_pred, average='weighted', zero_division=0)
+                f1 = f1_score(y_true, y_pred, average='weighted', zero_division=0)
+                cm = confusion_matrix(y_true, y_pred, labels=class_labels)
+                
+                model_metrics[model_name] = ModelMetrics(
+                    accuracy=round(acc, 4),
+                    precision=round(prec, 4),
+                    recall=round(rec, 4),
+                    f1_score=round(f1, 4),
+                    confusion_matrix=cm.tolist()
+                )
+        
+        # Generate insights (matching notebook style)
+        best_model = max(model_metrics.keys(), key=lambda k: model_metrics[k].accuracy)
+        best_accuracy = model_metrics[best_model].accuracy
+        
+        insights = {
+            "sentimentBalance": {
+                "positive": round(positive_pct, 1),
+                "negative": round(negative_pct, 1),
+                "neutral": round(neutral_pct, 1)
+            },
+            "bestModel": {
+                "name": best_model,
+                "accuracy": round(best_accuracy, 3)
+            },
+            "modelBehavior": "The models show good performance in identifying positive and negative sentiments, with some challenges in neutral classification."
+        }
+        
+        # Prepare raw data for client-side processing
+        raw_data = []
+        for idx, row in df_results.iterrows():
+            raw_data.append({
+                "text": row.get('text', ''),
+                "cleaned_text": row.get('cleaned_text', ''),
+                "nb_sentiment": row.get('nb_sentiment', ''),
+                "svm_sentiment": row.get('svm_sentiment', ''),
+                "bert_sentiment": row.get('bert_sentiment', '')
+            })
+        
         # Generate unique ID for this analysis
         analysis_id = str(uuid.uuid4())
         
@@ -300,11 +324,186 @@ async def analyze_query(
             id=analysis_id,
             query=request.query,
             createdAt=datetime.now().isoformat(),
-            charts=[pie_chart, bar_chart, line_chart],
-            metrics=metrics
+            sentimentDistribution=sentiment_distribution,
+            modelComparison=model_comparison,
+            sentimentCounts=sentiment_counts,
+            timeSeriesData=time_series_data,
+            wordCloudData=wordcloud_data,
+            confusionMatrices=confusion_matrices,
+            metrics=metrics,
+            modelMetrics=model_metrics,
+            insights=insights,
+            rawData=raw_data
         )
+        
+        # Save analysis to database
+        try:
+            db_analysis = models.Analysis(
+                analysis_id=analysis_id,
+                query=request.query,
+                response_data=json.dumps(response.dict()),
+                user_id=current_user.id
+            )
+            db.add(db_analysis)
+            db.commit()
+            db.refresh(db_analysis)
+        except Exception as e:
+            print(f"Error saving analysis to database: {e}")
+            # Continue without failing the request
         
         return response
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Analysis failed: {str(e)}")
+
+@router.get("/analyses/", response_model=List[schemas.AnalysisSummary])
+def get_user_analyses(
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_user)
+):
+    """
+    Get all analyses for the current user.
+    Returns a list of analysis summaries without the full response data.
+    """
+    analyses = db.query(models.Analysis).filter(
+        models.Analysis.user_id == current_user.id
+    ).order_by(models.Analysis.created_at.desc()).all()
+    
+    return [
+        schemas.AnalysisSummary(
+            analysis_id=analysis.analysis_id,
+            query=analysis.query,
+            created_at=analysis.created_at
+        )
+        for analysis in analyses
+    ]
+
+@router.get("/analyses/{analysis_id}", response_model=AnalysisResponse)
+def get_analysis_by_id(
+    analysis_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_user)
+):
+    """
+    Get a specific analysis by its ID.
+    Returns the full analysis response data.
+    """
+    analysis = db.query(models.Analysis).filter(
+        models.Analysis.analysis_id == analysis_id,
+        models.Analysis.user_id == current_user.id
+    ).first()
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    
+    try:
+        # Parse the stored JSON response
+        response_data = json.loads(analysis.response_data)
+        return AnalysisResponse(**response_data)
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Invalid analysis data")
+
+@router.delete("/analyses/{analysis_id}")
+def delete_analysis(
+    analysis_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_user)
+):
+    """
+    Delete a specific analysis by its ID.
+    """
+    analysis = db.query(models.Analysis).filter(
+        models.Analysis.analysis_id == analysis_id,
+        models.Analysis.user_id == current_user.id
+    ).first()
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    
+    db.delete(analysis)
+    db.commit()
+    
+    return {"message": "Analysis deleted successfully"}
+
+@router.get("/analyses/{analysis_id}/pdf", response_class=FileResponse)
+def download_analysis_pdf(
+    analysis_id: str,
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_user)
+):
+    """
+    Generate and download PDF report for a specific analysis.
+    """
+    analysis = db.query(models.Analysis).filter(
+        models.Analysis.analysis_id == analysis_id,
+        models.Analysis.user_id == current_user.id
+    ).first()
+    
+    if not analysis:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    
+    try:
+        # Parse the stored JSON response
+        response_data = json.loads(analysis.response_data)
+        
+        # Ensure results directory exists
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        
+        # Generate PDF using the analysis data
+        from . import pdf_generator
+        pdf_filename = f"analysis_{analysis_id}.pdf"
+        pdf_path = os.path.join(RESULTS_DIR, pdf_filename)
+        
+        # Create PDF from analysis data
+        pdf_generator.create_analysis_pdf_report(response_data, pdf_path)
+        
+        if not os.path.exists(pdf_path):
+            raise HTTPException(status_code=500, detail="Failed to generate PDF report")
+        
+        return FileResponse(
+            path=pdf_path,
+            filename=f"analysis-{analysis.query[:20]}-{analysis.created_at.strftime('%Y%m%d')}.pdf",
+            media_type="application/pdf"
+        )
+        
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="Invalid analysis data")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate PDF: {str(e)}")
+
+@router.get("/dashboard/data")
+def get_dashboard_data(
+    db: Session = Depends(database.get_db),
+    current_user: schemas.User = Depends(auth.get_current_user)
+):
+    """
+    Get dashboard data for the current user.
+    Returns analysis count and optionally the latest analysis if only one exists.
+    """
+    analyses = db.query(models.Analysis).filter(
+        models.Analysis.user_id == current_user.id
+    ).order_by(models.Analysis.created_at.desc()).all()
+    
+    analysis_count = len(analyses)
+    
+    dashboard_data = {
+        "analysisCount": analysis_count,
+        "analyses": [
+            {
+                "analysis_id": analysis.analysis_id,
+                "query": analysis.query,
+                "created_at": analysis.created_at.isoformat()
+            }
+            for analysis in analyses
+        ]
+    }
+    
+    # If there's exactly one analysis, include the full data for auto-display
+    if analysis_count == 1:
+        try:
+            response_data = json.loads(analyses[0].response_data)
+            dashboard_data["singleAnalysis"] = response_data
+        except json.JSONDecodeError:
+            pass  # Skip if data is corrupted
+    
+    return dashboard_data
