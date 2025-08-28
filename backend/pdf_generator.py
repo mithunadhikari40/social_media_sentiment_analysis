@@ -3,7 +3,7 @@ import pandas as pd
 import base64
 import io
 from reportlab.lib.pagesizes import letter
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image, Table, TableStyle, PageBreak
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.lib import colors
@@ -97,7 +97,10 @@ def create_base64_image(base64_string: str, width: float = 5*inch, height: float
 
 def create_analysis_pdf_report(analysis_data: dict, output_path: str):
     """
-    Generates a basic PDF report from analysis response data.
+    Generate a comprehensive PDF report from analysis response data.
+    Includes metadata, summaries, model comparisons, detailed metrics,
+    confusion matrices, per-model sentiment tables, key insights, top words,
+    sample records, and methodology. Images/diagrams are intentionally avoided.
     """
     if not os.path.exists(os.path.dirname(output_path)):
         os.makedirs(os.path.dirname(output_path))
@@ -108,25 +111,64 @@ def create_analysis_pdf_report(analysis_data: dict, output_path: str):
     # Custom styles
     title_style = ParagraphStyle(name='Title', fontSize=24, alignment=TA_CENTER, spaceAfter=20)
     heading_style = ParagraphStyle(name='Heading1', fontSize=16, alignment=TA_LEFT, spaceAfter=10, spaceBefore=10)
+    subheading_style = ParagraphStyle(name='Heading2', fontSize=13, alignment=TA_LEFT, spaceAfter=6, spaceBefore=6, textColor=colors.darkblue)
     body_style = styles['BodyText']
+    small_style = ParagraphStyle(name='Small', fontSize=9, alignment=TA_LEFT, spaceAfter=4)
 
     story = []
 
-    # --- Title ---
+    # --- Title / Cover ---
     story.append(Paragraph("Social Media Sentiment Analysis Report", title_style))
-    story.append(Spacer(1, 24))
-
-    # --- Query Information ---
-    story.append(Paragraph("Analysis Details", heading_style))
-    query_text = f"<b>Search Query:</b> {analysis_data.get('query', 'N/A')}"
-    story.append(Paragraph(query_text, body_style))
+    story.append(Spacer(1, 12))
+    story.append(Paragraph("Report Metadata", heading_style))
     created_at = analysis_data.get('createdAt', 'N/A')
-    date_text = f"<b>Analysis Date:</b> {created_at}"
-    story.append(Paragraph(date_text, body_style))
+    analysis_id = analysis_data.get('id', 'N/A')
+    query_text = analysis_data.get('query', 'N/A')
+    metrics = analysis_data.get('metrics', {}) or {}
+    total_tweets = metrics.get('totalTweets') if isinstance(metrics, dict) else None
+    overall_sentiment = metrics.get('overallSentiment') if isinstance(metrics, dict) else None
+    confidence_score = metrics.get('confidenceScore') if isinstance(metrics, dict) else None
+
+    meta_rows = [
+        ["Analysis ID", str(analysis_id)],
+        ["Query", str(query_text)],
+        ["Created At", str(created_at)],
+        ["Total Posts Analyzed", str(total_tweets if total_tweets is not None else 'N/A')],
+        ["Overall Sentiment", str(overall_sentiment if overall_sentiment is not None else 'N/A')],
+        ["Confidence Score", f"{confidence_score:.2f}%" if isinstance(confidence_score, (int, float)) else 'N/A'],
+    ]
+    meta_table = Table([["Field", "Value"]] + meta_rows, colWidths=[2.2*inch, 4.8*inch])
+    meta_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1f2937')),
+        ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+        ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+        ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f3f4f6')),
+        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+    ]))
+    story.append(meta_table)
+    story.append(Spacer(1, 18))
+
+    # Executive summary
+    story.append(Paragraph("Executive Summary", heading_style))
+    summary_lines = []
+    if isinstance(metrics, dict):
+        pos = metrics.get('positivePercentage')
+        neg = metrics.get('negativePercentage')
+        neu = metrics.get('neutralPercentage')
+        if all(isinstance(x, (int, float)) for x in [pos, neg, neu]):
+            summary_lines.append(f"Positive {pos:.1f}%, Negative {neg:.1f}%, Neutral {neu:.1f}%.")
+    if overall_sentiment:
+        summary_lines.append(f"Overall sentiment is <b>{overall_sentiment.title()}</b> with confidence {confidence_score:.1f}%" if isinstance(confidence_score, (int, float)) else f"Overall sentiment is <b>{overall_sentiment.title()}</b>.")
+    if not summary_lines:
+        summary_lines.append("This report summarizes sentiment distribution, model performance, and key insights.")
+    story.append(Paragraph(" ".join(summary_lines), body_style))
     story.append(Spacer(1, 12))
 
-    # --- Sentiment Distribution ---
-    story.append(Paragraph("Sentiment Distribution", heading_style))
+    # --- Sentiment Distribution (BERT) ---
+    story.append(Paragraph("Sentiment Distribution (BERT)", heading_style))
     sentiment_dist = analysis_data.get('sentimentDistribution', [])
     if sentiment_dist:
         table_data = [['Sentiment', 'Count', 'Percentage']]
@@ -137,7 +179,7 @@ def create_analysis_pdf_report(analysis_data: dict, output_path: str):
                 f"{item.get('percentage', 0):.1f}%"
             ])
         
-        table = Table(table_data)
+        table = Table(table_data, colWidths=[2*inch, 1.5*inch, 2*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -151,6 +193,38 @@ def create_analysis_pdf_report(analysis_data: dict, output_path: str):
         story.append(table)
         story.append(Spacer(1, 24))
 
+    # --- Per-Model Sentiment Counts ---
+    sentiment_counts = analysis_data.get('sentimentCounts', {}) or {}
+    if isinstance(sentiment_counts, dict) and len(sentiment_counts) > 0:
+        story.append(Paragraph("Per-Model Sentiment Breakdown", heading_style))
+        # Build a table with rows as sentiments and columns as models
+        models = list(sentiment_counts.keys())
+        sentiments = ['negative', 'neutral', 'positive']
+        header = ['Sentiment'] + models
+        rows = [header]
+        for s in sentiments:
+            row = [s.title()]
+            for m in models:
+                values = sentiment_counts.get(m, [])
+                val = next((v for v in values if isinstance(v, dict) and v.get('sentiment') == s), None)
+                if val:
+                    row.append(f"{val.get('count', 0)} ({val.get('percentage', 0):.1f}%)")
+                else:
+                    row.append("0 (0.0%)")
+            rows.append(row)
+        model_table = Table(rows)
+        model_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#374151')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#f9fafb')),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+        ]))
+        story.append(model_table)
+        story.append(Spacer(1, 18))
+
     # --- Model Comparison ---
     story.append(Paragraph("Model Performance Comparison", heading_style))
     model_comparison = analysis_data.get('modelComparison', {})
@@ -159,7 +233,7 @@ def create_analysis_pdf_report(analysis_data: dict, output_path: str):
         for model, accuracy in model_comparison.items():
             table_data.append([model.upper(), f"{accuracy:.3f}"])
         
-        table = Table(table_data)
+        table = Table(table_data, colWidths=[3*inch, 3*inch])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
@@ -175,27 +249,89 @@ def create_analysis_pdf_report(analysis_data: dict, output_path: str):
 
     # --- Key Insights ---
     insights = analysis_data.get('insights', {})
-    if insights:
+    if isinstance(insights, dict) and len(insights) > 0:
         story.append(Paragraph("Key Insights", heading_style))
+        # Known insight keys with richer formatting
+        sentiment_balance = insights.get('sentimentBalance') or insights.get('SentimentBalance')
+        if isinstance(sentiment_balance, dict) and len(sentiment_balance) > 0:
+            story.append(Paragraph("Sentiment Balance", subheading_style))
+            sb_table = Table([
+                ['Positive', 'Negative', 'Neutral'],
+                [
+                    f"{sentiment_balance.get('positive', 0):.1f}%",
+                    f"{sentiment_balance.get('negative', 0):.1f}%",
+                    f"{sentiment_balance.get('neutral', 0):.1f}%",
+                ]
+            ])
+            sb_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2563eb')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+            ]))
+            story.append(sb_table)
+            story.append(Spacer(1, 8))
+
+        best_model = insights.get('bestModel') or insights.get('BestModel')
+        if isinstance(best_model, dict) and len(best_model) > 0:
+            story.append(Paragraph("Best Performing Model", subheading_style))
+            bm_table = Table([
+                ['Model', 'Accuracy'],
+                [str(best_model.get('name', 'N/A')), f"{best_model.get('accuracy', 0):.3f}"]
+            ], colWidths=[3*inch, 3*inch])
+            bm_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#059669')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey)
+            ]))
+            story.append(bm_table)
+            story.append(Spacer(1, 8))
+
+        model_behavior = insights.get('modelBehavior') or insights.get('ModelBehavior')
+        if model_behavior:
+            story.append(Paragraph("Model Behavior", subheading_style))
+            story.append(Paragraph(str(model_behavior), body_style))
+            story.append(Spacer(1, 8))
+
+        # Any remaining insight keys
         for key, value in insights.items():
-            insight_text = f"<b>{key.replace('_', ' ').title()}:</b> {str(value)}"
-            story.append(Paragraph(insight_text, body_style))
+            if key in ['sentimentBalance', 'SentimentBalance', 'bestModel', 'BestModel', 'modelBehavior', 'ModelBehavior']:
+                continue
+            story.append(Paragraph(key.replace('_', ' ').title(), subheading_style))
+            story.append(Paragraph(str(value), body_style))
+            story.append(Spacer(1, 6))
         story.append(Spacer(1, 12))
 
     # --- Model Metrics ---
     model_metrics = analysis_data.get('modelMetrics', {})
-    if model_metrics:
+    if isinstance(model_metrics, dict) and len(model_metrics) > 0:
         story.append(Paragraph("Detailed Model Metrics", heading_style))
-        for model_name, metrics in model_metrics.items():
-            story.append(Paragraph(f"<b>{model_name.upper()} Model:</b>", body_style))
-            metrics_text = f"Accuracy: {metrics.get('accuracy', 0):.3f}, Precision: {metrics.get('precision', 0):.3f}, Recall: {metrics.get('recall', 0):.3f}, F1-Score: {metrics.get('f1_score', 0):.3f}"
-            story.append(Paragraph(metrics_text, body_style))
-            story.append(Spacer(1, 6))
+        mm_table_rows = [['Model', 'Accuracy', 'Precision', 'Recall', 'F1-Score']]
+        for model_name, metrics_obj in model_metrics.items():
+            mm_table_rows.append([
+                model_name.upper(),
+                f"{(metrics_obj.get('accuracy', 0)):.3f}",
+                f"{(metrics_obj.get('precision', 0)):.3f}",
+                f"{(metrics_obj.get('recall', 0)):.3f}",
+                f"{(metrics_obj.get('f1_score', 0)):.3f}",
+            ])
+        mm_table = Table(mm_table_rows)
+        mm_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.grey),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.beige),
+            ('GRID', (0, 0), (-1, -1), 1, colors.black)
+        ]))
+        story.append(mm_table)
         story.append(Spacer(1, 24))
 
     # --- Confusion Matrices ---
     confusion_matrices = analysis_data.get('confusionMatrices', {})
-    if confusion_matrices:
+    if isinstance(confusion_matrices, dict) and len(confusion_matrices) > 0:
         story.append(Paragraph("Confusion Matrices", heading_style))
         for model_name, matrix_data in confusion_matrices.items():
             story.append(Paragraph(f"<b>{model_name.upper().replace('_', ' ')} Model:</b>", body_style))
@@ -227,6 +363,25 @@ def create_analysis_pdf_report(analysis_data: dict, output_path: str):
                 story.append(table)
                 story.append(Spacer(1, 12))
 
+    # --- Top Words by Sentiment ---
+    word_cloud_data = analysis_data.get('wordCloudData', {}) or {}
+    if isinstance(word_cloud_data, dict) and len(word_cloud_data) > 0:
+        story.append(Paragraph("Top Words by Sentiment", heading_style))
+        for sentiment in ['positive', 'negative', 'neutral']:
+            words = word_cloud_data.get(sentiment)
+            if words and isinstance(words, list) and len(words) > 0:
+                story.append(Paragraph(sentiment.title(), subheading_style))
+                # Show as comma-separated, truncated for readability
+                preview = ", ".join([str(w) for w in words[:50]])
+                if len(words) > 50:
+                    preview += ", ..."
+                story.append(Paragraph(preview, small_style))
+                story.append(Spacer(1, 6))
+        story.append(Spacer(1, 12))
+
+    # Page break before appendix-like content
+    story.append(PageBreak())
+
     # --- Sample Data Analysis ---
     raw_data = analysis_data.get('rawData', [])
     if raw_data and len(raw_data) > 0:
@@ -234,8 +389,8 @@ def create_analysis_pdf_report(analysis_data: dict, output_path: str):
         story.append(Paragraph("Representative sample of analyzed posts:", body_style))
         story.append(Spacer(1, 12))
         
-        # Show first 3 posts as examples
-        for i, post in enumerate(raw_data[:3]):
+        # Show up to first 5 posts as examples
+        for i, post in enumerate(raw_data[:5]):
             story.append(Paragraph(f"<b>Post {i+1}:</b>", body_style))
             text = post.get('text', 'N/A')[:150] + "..." if len(post.get('text', '')) > 150 else post.get('text', 'N/A')
             story.append(Paragraph(f"<i>Text:</i> {text}", body_style))
@@ -249,6 +404,26 @@ def create_analysis_pdf_report(analysis_data: dict, output_path: str):
             story.append(Spacer(1, 10))
         
         story.append(Spacer(1, 24))
+
+    # --- Time Series Summary (textual) ---
+    ts = analysis_data.get('timeSeriesData', [])
+    if isinstance(ts, list) and len(ts) > 0:
+        story.append(Paragraph("Temporal Sentiment Summary", heading_style))
+        try:
+            first_date = ts[0].get('date')
+            last_date = ts[-1].get('date')
+            sum_pos = sum(int(day.get('positive', 0)) for day in ts)
+            sum_neg = sum(int(day.get('negative', 0)) for day in ts)
+            sum_neu = sum(int(day.get('neutral', 0)) for day in ts)
+            total = max(1, sum_pos + sum_neg + sum_neu)
+            story.append(Paragraph(
+                f"Window {first_date} → {last_date}. Totals: Positive {sum_pos} ({(sum_pos/total*100):.1f}%), "
+                f"Negative {sum_neg} ({(sum_neg/total*100):.1f}%), Neutral {sum_neu} ({(sum_neu/total*100):.1f}%).",
+                body_style
+            ))
+        except Exception:
+            pass
+        story.append(Spacer(1, 12))
 
     # --- Methodology ---
     story.append(Paragraph("Methodology & Technical Details", heading_style))
