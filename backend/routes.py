@@ -1,4 +1,5 @@
 import os
+import uuid
 from typing import List, Dict, Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import FileResponse
@@ -11,6 +12,7 @@ from datetime import datetime
 from sklearn.metrics import confusion_matrix, accuracy_score, precision_score, recall_score, f1_score
 
 from . import auth, schemas, database, models, analysis
+from .twitter_client import get_twitter_client
 
 router = APIRouter()
 
@@ -115,42 +117,83 @@ async def analyze_query(
     """
     Analyze social media sentiment based on a query.
     Returns comprehensive chart data and metrics matching the analysis.ipynb notebook.
+    Supports both live Twitter data and existing file data based on useLiveData parameter.
     """
     try:
-        # Load data
-        sample_data_path = os.path.join(BASE_DIR, "sample_tweets.csv")
-        
-        if os.path.exists(sample_data_path):
-            df = pd.read_csv(sample_data_path)
+        # Load data based on useLiveData parameter
+        if request.useLiveData:
+            # Fetch live data from Twitter
+            if not request.query.strip():
+                raise HTTPException(status_code=400, detail="Query is required for live Twitter data")
+            
+            try:
+                twitter_client = get_twitter_client()
+                df = twitter_client.search_tweets(request.query, max_results=100)
+                
+                if df.empty:
+                    raise HTTPException(status_code=404, detail=f"No tweets found for query: '{request.query}'")
+                
+                # Preprocess the tweets
+                df = twitter_client.preprocess_tweets_dataframe(df)
+                
+            except Exception as e:
+                # If Twitter API fails, fall back to loading data from existing file
+                print(f"Twitter API error: {e}. Falling back to existing data file.")
+                sample_data_path = os.path.join(BASE_DIR, "sample_tweets.csv")
+                
+                if os.path.exists(sample_data_path):
+                    df = pd.read_csv(sample_data_path)
+                    print(f"Loaded {len(df)} tweets from sample_tweets.csv as fallback")
+                else:
+                    # Only create hardcoded sample data if no file exists at all
+                    df = pd.DataFrame({
+                        'text': [
+                            f"Sample tweet about {request.query} - I love this!",
+                            f"Not impressed with {request.query} at all",
+                            f"{request.query} is okay, nothing special",
+                            f"Absolutely fantastic {request.query}! Highly recommend",
+                            f"Not good {request.query}, very disappointed"
+                        ]
+                    })
+                    print("No sample_tweets.csv found, using hardcoded fallback data")
         else:
-            # Create sample data if file doesn't exist
-            df = pd.DataFrame({
-                'text': [
-                    "I love this product! It's amazing!",
-                    "This is terrible, worst experience ever",
-                    "It's okay, nothing special",
-                    "Absolutely fantastic! Highly recommend",
-                    "Not good at all, very disappointed",
-                    "Pretty decent, could be better",
-                    "Outstanding quality and service!",
-                    "Waste of money, don't buy this",
-                    "Average product, meets expectations",
-                    "Excellent! Will buy again!",
-                    "Great service and fast delivery",
-                    "Poor quality, not worth the price",
-                    "Neutral experience, nothing special",
-                    "Amazing product, exceeded expectations!",
-                    "Disappointed with the purchase"
-                ]
-            })
-        
-        # Filter data based on query if provided
-        if request.query.strip():
-            df_filtered = df[df['text'].str.contains(request.query, case=False, na=False)]
-            if df_filtered.empty:
+            # Load data from existing file
+            sample_data_path = os.path.join(BASE_DIR, "sample_tweets.csv")
+            
+            if os.path.exists(sample_data_path):
+                df = pd.read_csv(sample_data_path)
+            else:
+                # Create sample data if file doesn't exist
+                df = pd.DataFrame({
+                    'text': [
+                        "I love this product! It's amazing!",
+                        "This is terrible, worst experience ever",
+                        "It's okay, nothing special",
+                        "Absolutely fantastic! Highly recommend",
+                        "Not good at all, very disappointed",
+                        "Pretty decent, could be better",
+                        "Outstanding quality and service!",
+                        "Waste of money, don't buy this",
+                        "Average product, meets expectations",
+                        "Excellent! Will buy again!",
+                        "Great service and fast delivery",
+                        "Poor quality, not worth the price",
+                        "Neutral experience, nothing special",
+                        "Amazing product, exceeded expectations!",
+                        "Disappointed with the purchase"
+                    ]
+                })
+            
+            # Filter data based on query if provided
+            if request.query.strip():
+                df_filtered = df[df['text'].str.contains(request.query, case=False, na=False)]
+                if df_filtered.empty:
+                    df_filtered = df
+            else:
                 df_filtered = df
-        else:
-            df_filtered = df
+        
+        # Use filtered data for file-based analysis, or all data for live analysis
+        df_filtered = df_filtered if not request.useLiveData else df
         
         # Run sentiment analysis
         df_results = analysis.run_analysis(df_filtered)

@@ -30,12 +30,11 @@ const Layout = () => {
           width: { xs: '100%', sm: `calc(100% - ${DRAWER_WIDTH}px)` },
           marginLeft: { xs: 0, sm: `${DRAWER_WIDTH}px` },
           marginTop: '64px', // Height of the AppBar
-          display: 'flex',
-          justifyContent: 'center',
           minHeight: 'calc(100vh - 64px)',
+          bgcolor: 'background.default',
         }}
       >
-        <Box sx={{ width: '100%', maxWidth: 1200 }}>
+        <Box sx={{ width: '100%' }}>
           <Outlet />
         </Box>
       </Box>

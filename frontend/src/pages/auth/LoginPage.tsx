@@ -7,7 +7,6 @@ import {
   Button,
   TextField,
   Typography,
-  Container,
   Paper,
   Link,
   InputAdornment,
@@ -53,27 +52,29 @@ const LoginPage = () => {
     <Box
       sx={{
         minHeight: '100vh',
+        width: '100vw',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         bgcolor: 'background.default',
-        p: 2
+        p: 2,
+        position: 'fixed',
+        top: 0,
+        left: 0
       }}
     >
-      <Container component="main" maxWidth="sm">
-        <Paper
-          elevation={3}
-          sx={{
-            p: 4,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            borderRadius: 2,
-            width: '100%',
-            maxWidth: 500,
-            mx: 'auto'
-          }}
-        >
+      <Paper
+        elevation={3}
+        sx={{
+          p: 4,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          borderRadius: 2,
+          width: '100%',
+          maxWidth: 450
+        }}
+      >
           <Typography component="h1" variant="h5" sx={{ mb: 3, textAlign: 'center' }}>
             Sign in
           </Typography>
@@ -149,7 +150,6 @@ const LoginPage = () => {
             </Box>
           </Box>
         </Paper>
-      </Container>
     </Box>
   );
 };

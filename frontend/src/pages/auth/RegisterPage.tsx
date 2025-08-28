@@ -7,7 +7,6 @@ import {
   Button,
   TextField,
   Typography,
-  Container,
   Paper,
   Link,
   InputAdornment,
@@ -62,44 +61,46 @@ const RegisterPage = () => {
     <Box
       sx={{
         minHeight: '100vh',
+        width: '100vw',
         display: 'flex',
         justifyContent: 'center',
         alignItems: 'center',
         bgcolor: 'background.default',
-        p: 2
+        p: 2,
+        position: 'fixed',
+        top: 0,
+        left: 0
       }}
     >
-      <Container component="main" maxWidth="md">
-        <Paper
-          elevation={3}
-          sx={{
-            p: 4,
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            borderRadius: 2,
-            width: '100%',
-            maxWidth: 600,
-            mx: 'auto'
-          }}
+      <Paper
+        elevation={3}
+        sx={{
+          p: 4,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          borderRadius: 2,
+          width: '100%',
+          maxWidth: 500
+        }}
         >
           <Typography component="h1" variant="h5" sx={{ mb: 3, textAlign: 'center' }}>
             Create an account
           </Typography>
-          
+
           <Box
             component="form"
             onSubmit={formik.handleSubmit}
             noValidate
             sx={{ width: '100%' }}
           >
-          
+
           {error && (
             <Alert severity="error" sx={{ width: '100%', mb: 3 }}>
               {error}
             </Alert>
           )}
-          
+
           <TextField
             margin="normal"
             required
@@ -200,7 +201,6 @@ const RegisterPage = () => {
             </Box>
           </Box>
         </Paper>
-      </Container>
     </Box>
   );
 };

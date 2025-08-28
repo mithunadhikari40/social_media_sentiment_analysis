@@ -73,49 +73,49 @@ function App() {
         <CssBaseline />
         <AuthProvider>
           <Router>
-            <Box sx={{ display: 'flex', minHeight: '100vh' }}>
-              <Suspense fallback={<LoadingScreen />}>
-                <Routes>
-                  {/* Public Routes */}
-                  <Route
-                    path="/login"
-                    element={
-                      <PublicRoute>
-                        <LoginPage />
-                      </PublicRoute>
-                    }
-                  />
-                  <Route
-                    path="/register"
-                    element={
-                      <PublicRoute>
-                        <RegisterPage />
-                      </PublicRoute>
-                    }
-                  />
+            <Suspense fallback={<LoadingScreen />}>
+              <Routes>
+                {/* Public Routes - Full width for centering */}
+                <Route
+                  path="/login"
+                  element={
+                    <PublicRoute>
+                      <LoginPage />
+                    </PublicRoute>
+                  }
+                />
+                <Route
+                  path="/register"
+                  element={
+                    <PublicRoute>
+                      <RegisterPage />
+                    </PublicRoute>
+                  }
+                />
 
-                  {/* Protected Routes */}
-                  <Route
-                    path="/"
-                    element={
+                {/* Protected Routes - Use flex layout with sidebar */}
+                <Route
+                  path="/"
+                  element={
+                    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
                       <ProtectedRoute>
                         <Layout />
                       </ProtectedRoute>
-                    }
-                  >
-                    <Route index element={<Navigate to="/dashboard" replace />} />
-                    <Route path="dashboard" element={<DashboardPage />} />
-                    <Route path="analysis" element={<AnalysisPage />} />
-                    <Route path="analysis/:id" element={<AnalysisDetailsPage />} />
-                    <Route path="reports" element={<ReportsPage />} />
-                    <Route path="profile" element={<ProfilePage />} />
-                  </Route>
+                    </Box>
+                  }
+                >
+                  <Route index element={<Navigate to="/dashboard" replace />} />
+                  <Route path="dashboard" element={<DashboardPage />} />
+                  <Route path="analysis" element={<AnalysisPage />} />
+                  <Route path="analysis/:id" element={<AnalysisDetailsPage />} />
+                  <Route path="reports" element={<ReportsPage />} />
+                  <Route path="profile" element={<ProfilePage />} />
+                </Route>
 
-                  {/* 404 Route */}
-                  <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                </Routes>
-              </Suspense>
-            </Box>
+                {/* 404 Route */}
+                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+              </Routes>
+            </Suspense>
           </Router>
         </AuthProvider>
       </ThemeProvider>

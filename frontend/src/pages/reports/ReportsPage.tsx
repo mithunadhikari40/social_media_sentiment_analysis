@@ -125,7 +125,7 @@ const ReportsPage = () => {
   }
 
   return (
-    <Box>
+    <Box sx={{ width: '100%', height: '100%' }}>
       <Box display="flex" justifyContent="space-between" alignItems="center" mb={4}>
         <Typography variant="h4" component="h1">
           Analysis Reports
@@ -140,14 +140,14 @@ const ReportsPage = () => {
       </Box>
 
       <Paper sx={{ width: '100%', overflow: 'hidden', mb: 3 }}>
-        <TableContainer>
-          <Table>
+        <TableContainer sx={{ maxHeight: '70vh', width: '100%' }}>
+          <Table stickyHeader sx={{ width: '100%', tableLayout: 'fixed' }}>
             <TableHead>
               <TableRow>
-                <TableCell sx={{ minWidth: 200 }}>Query</TableCell>
-                <TableCell sx={{ minWidth: 150 }}>Date</TableCell>
-                <TableCell sx={{ minWidth: 100 }}>Status</TableCell>
-                <TableCell align="right" sx={{ minWidth: 150 }}>Actions</TableCell>
+                <TableCell sx={{ width: '40%' }}>Query</TableCell>
+                <TableCell sx={{ width: '25%' }}>Date</TableCell>
+                <TableCell sx={{ width: '15%' }}>Status</TableCell>
+                <TableCell align="right" sx={{ width: '20%' }}>Actions</TableCell>
               </TableRow>
             </TableHead>
             <TableBody>
@@ -157,7 +157,7 @@ const ReportsPage = () => {
                   .map((analysis: any) => (
                     <TableRow hover key={analysis.id || analysis.analysis_id}>
                       <TableCell>
-                        <Typography variant="body2" noWrap>
+                        <Typography variant="body2" sx={{ wordBreak: 'break-word' }}>
                           {analysis.query}
                         </Typography>
                       </TableCell>
