@@ -16,34 +16,45 @@ warnings.filterwarnings('ignore')
 plt.style.use('seaborn-v0_8')
 sns.set_palette("husl")
 
-def create_sentiment_distribution_chart(sentiment_data):
-    """Create pie chart for sentiment distribution"""
+import io
+import matplotlib.pyplot as plt
+
+
+def create_sentiment_distribution_chart(sentiment_data, save_path=None):
+
     if not sentiment_data:
         return None
-    
+
     fig, ax = plt.subplots(figsize=(10, 8))
-    
+
     labels = [item['sentiment'].capitalize() for item in sentiment_data]
     sizes = [item['count'] for item in sentiment_data]
     colors = ['#2ecc71', '#e74c3c', '#95a5a6']  # Green, Red, Gray
-    
-    wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors, autopct='%1.1f%%',
-                                     startangle=90, textprops={'fontsize': 12})
-    
-    # Enhance the appearance
+
+    wedges, texts, autotexts = ax.pie(
+        sizes, labels=labels, colors=colors, autopct='%1.1f%%',
+        startangle=90, textprops={'fontsize': 12}
+    )
+
     for autotext in autotexts:
         autotext.set_color('white')
         autotext.set_fontweight('bold')
-    
+
     ax.set_title('Sentiment Distribution', fontsize=16, fontweight='bold', pad=20)
-    
-    # Save to bytes
-    img_buffer = io.BytesIO()
-    plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
-    img_buffer.seek(0)
-    plt.close()
-    
-    return img_buffer
+
+    if save_path:
+        # Save to disk
+        plt.savefig(save_path, format='png', dpi=300, bbox_inches='tight')
+        plt.close(fig)
+        return fig,save_path
+    else:
+        # Save to in-memory buffer
+        img_buffer = io.BytesIO()
+        plt.savefig(img_buffer, format='png', dpi=300, bbox_inches='tight')
+        img_buffer.seek(0)
+        plt.close(fig)
+        return fig,img_buffer
+
 
 def create_model_accuracy_chart(model_comparison):
     """Create bar chart for model accuracy comparison"""

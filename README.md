@@ -154,6 +154,10 @@ Before running this API, first go through the notebook(analysis.ipynb and run al
     ```bash
     uvicorn backend.main:app --reload
     ```
+2.  **Run the test:**
+    ```bash
+    cd .. &&   python -m unittest discover -s backend/tests -p "test_*.py" -t backend -v
+    ```
 
 ## API Endpoints
 
